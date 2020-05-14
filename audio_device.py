@@ -30,7 +30,7 @@ class AudioDevice(QObject):
         for item in devices:
             dev_name = item.deviceName()
             if dev_name.endswith(".monitor"):
-                self.monitors.append(dev_name)
+                self.monitors.append(item)
             if item.deviceName() == self.preferred_device:
                 self._device = item
         if not self._device:
