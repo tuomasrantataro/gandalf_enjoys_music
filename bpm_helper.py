@@ -43,7 +43,7 @@ class BPMWorkerQt(QObject):
                 minTempo=self.min_tempo,
                 maxTempo=self.max_tempo)
             bpm, _, beats_confidence, _, _ = rhythm_extractor(self.audio)
-            print("BPM: {} Confidence: {}".format(bpm, beats_confidence))
+            #print("BPM: {} Confidence: {}".format(bpm, beats_confidence))
             if beats_confidence > 2.5:
                 self.bpm.emit(bpm)
 
@@ -120,14 +120,14 @@ class BPMmp():
             rhythm_extractor = essentia.standard.RhythmExtractor2013(
                 method="degara", minTempo=min_tempo, maxTempo=max_tempo)
             bpm, _, _, _, _ = rhythm_extractor(audio)
-            print("BPM:", bpm)
+            #print("BPM:", bpm)
             queue.put(bpm)
 
         else:
             rhythm_extractor = essentia.standard.RhythmExtractor2013(
                 method="multifeature", minTempo=min_tempo, maxTempo=max_tempo)
             bpm, _, beats_confidence, _, _ = rhythm_extractor(audio)
-            print("BPM: {} Confidence: {}".format(bpm, beats_confidence))
+            #print("BPM: {} Confidence: {}".format(bpm, beats_confidence))
             if beats_confidence > 2.5:
                 queue.put(bpm)
             else:

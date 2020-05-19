@@ -5,15 +5,15 @@ from PySide2.QtMultimediaWidgets import QVideoWidget
 from PySide2.QtWidgets import (QCheckBox, QHBoxLayout, QLineEdit, QMainWindow,
                                QPushButton, QVBoxLayout, QWidget)
 
-
 class GandalfVideo(QVideoWidget):
     """Widget for showing looping video and setting its playback speed"""
     fullscreen_changed = Signal(bool)
-    def __init__(self, parent, show_preview):
+    def __init__(self, parent, show_preview, loop_bpm, update_skip_ms):
         super().__init__(parent)
         self.show_preview = show_preview
+        self.update_skip_ms = update_skip_ms
 
-        self.gandalf_default_bpm = 74
+        self.gandalf_default_bpm = loop_bpm #74.2
         self.old_bpm = self.gandalf_default_bpm
 
         self.init_video()
@@ -67,20 +67,24 @@ class GandalfVideo(QVideoWidget):
             gandalf_speed = bpm / self.gandalf_default_bpm
             current_position = self.media_player.position()
             self.media_player.setPlaybackRate(gandalf_speed)
-            self.media_player.setPosition(current_position+100)
+            self.media_player.setPosition(current_position+self.update_skip_ms)
             self.media_player.play()
 
 class MainWindow(QMainWindow):
     """Display nodding Gandalf loop and controls"""
-    show_preview = True
-    def __init__(self, parent=None):
+    #show_preview = True
+    def __init__(self, show_preview, loop_bpm, update_skip_ms, parent=None):
         super().__init__(parent)
+        self.show_preview = show_preview
 
         self.central = QWidget(self)
         self.setCentralWidget(self.central)
         self.layout = QVBoxLayout()
 
-        self.video_widget = GandalfVideo(self, self.show_preview)
+        self.video_widget = GandalfVideo(self,
+                                         self.show_preview,
+                                         loop_bpm,
+                                         update_skip_ms)
 
         if self.show_preview:
             self.layout.addWidget(self.video_widget)

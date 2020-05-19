@@ -1,0 +1,8 @@
+{
+    "no_multiprocess": false,
+    "rhythm_algorithm_faster": false,
+    "default_device": "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor",
+    "show_video_preview": true,
+    "video_loop_bpm": 74.0,
+    "video_update_skip_time_ms": 100
+}

@@ -6,15 +6,11 @@ from PySide2.QtMultimedia import QAudio, QAudioDeviceInfo, QAudioFormat, QAudioI
 from audio_data_handler import AudioDataHandler
 
 class AudioDevice(QObject):
-    """Class for storing computer's audio system information.
-
-    alsa_output.pci-0000_00_1f.3.analog-stereo.monitor
-    """
+    """Class for storing computer's audio system information."""
     data_ready = Signal(np.ndarray)
-    preferred_device = "bluez_sink.2C_4D_79_10_4A_0C.a2dp_sink.monitor"
-
-    def __init__(self):
+    def __init__(self, default_device_name):
         super().__init__()
+        self.default_device_name = default_device_name
         self._pull_timer = QTimer()
         self._pull_timer.setInterval(3000)
         self._pull_timer.timeout.connect(self.write_to_buffer)
@@ -31,7 +27,7 @@ class AudioDevice(QObject):
             dev_name = item.deviceName()
             if dev_name.endswith(".monitor"):
                 self.monitors.append(item)
-            if item.deviceName() == self.preferred_device:
+            if item.deviceName() == self.default_device_name:
                 self._device = item
         if not self._device:
             try:
@@ -57,8 +53,6 @@ class AudioDevice(QObject):
         if not device_info.isFormatSupported(self._format):
             print("Default format not supported - trying to use nearest.")
             self._format = device_info.nearestFormat(self._format)
-            print("New format:")
-        print(self._format)
 
         self._audio_data_handler = AudioDataHandler(self._format)
 
@@ -78,11 +72,6 @@ class AudioDevice(QObject):
         QAudio.StoppedState: "StoppedState",
         QAudio.IdleState: "IdleState"
     }
-
-    @Slot()
-    def handle_state_changed(self, state):
-        """Audio recording state has changed."""
-        print("state = " + self.stateMap.get(state, "Unknown"))
 
     @Slot()
     def write_to_buffer(self):
