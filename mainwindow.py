@@ -1,8 +1,10 @@
-from PySide2.QtCore import Slot, Signal, Qt, QUrl
-from PySide2.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton
+from PySide2.QtCore import Qt, QUrl, Signal, Slot
 from PySide2.QtGui import QPalette
 from PySide2.QtMultimedia import QMediaPlayer, QMediaPlaylist
 from PySide2.QtMultimediaWidgets import QVideoWidget
+from PySide2.QtWidgets import (QCheckBox, QHBoxLayout, QLineEdit, QMainWindow,
+                               QPushButton, QVBoxLayout, QWidget)
+
 
 class GandalfVideo(QVideoWidget):
     """Widget for showing looping video and setting its playback speed"""
@@ -11,7 +13,7 @@ class GandalfVideo(QVideoWidget):
         super().__init__(parent)
         self.show_preview = show_preview
 
-        self.gandalf_default_bpm = 75
+        self.gandalf_default_bpm = 74
         self.old_bpm = self.gandalf_default_bpm
 
         self.init_video()
@@ -61,7 +63,6 @@ class GandalfVideo(QVideoWidget):
         """Update playback speed for Gandalf video loop."""
         bpm = int(bpm+0.5)
         if bpm != self.old_bpm:
-            print("BPM updated:", bpm)
             self.old_bpm = bpm
             gandalf_speed = bpm / self.gandalf_default_bpm
             current_position = self.media_player.position()
@@ -91,10 +92,106 @@ class MainWindow(QMainWindow):
             self.video_widget.fullscreen_changed.connect(
                 self.update_button_text)
 
+        self.control_layout = QHBoxLayout()
+
+        self.lock_checkbox = QCheckBox("Manual tempo", self)
+        self.lock_checkbox.clicked.connect(self.update_lock_checkbox)
+        self.control_layout.addWidget(self.lock_checkbox)
+
+        self.set_bpm_widget = QLineEdit("{:.1f}".format(self.video_widget.old_bpm), self)
+        self.set_bpm_widget.setMaxLength(5)
+        self.set_bpm_widget.returnPressed.connect(self.update_bpm_manually)
+        self.set_bpm_palette = QPalette()
+        self.set_bpm_palette.setColor(QPalette.Text, Qt.gray)
+        self.set_bpm_widget.setPalette(self.set_bpm_palette)
+        self.set_bpm_widget.setFixedWidth(50)
+        self.control_layout.addWidget(self.set_bpm_widget)
+
+        self.control_layout.addSpacing(50)
+
+        self.limit_checkbox = QCheckBox("Limit tempo between:", self)
+        self.control_layout.addWidget(self.limit_checkbox)
+
+        self.lower_bpm_limit = 60.0
+        self.lower_bpm_widget = QLineEdit(str(self.lower_bpm_limit), self)
+        self.lower_bpm_widget.setMaxLength(5)
+        self.lower_bpm_widget.returnPressed.connect(self.update_lower_limit)
+        self.lower_bpm_widget.setFixedWidth(50)
+        self.control_layout.addWidget(self.lower_bpm_widget)
+
+        self.upper_bpm_limit = 120.0
+        self.upper_bpm_widget = QLineEdit(str(self.upper_bpm_limit), self)
+        self.upper_bpm_widget.setMaxLength(5)
+        self.upper_bpm_widget.returnPressed.connect(self.update_upper_limit)
+        self.upper_bpm_widget.setFixedWidth(50)
+        self.control_layout.addWidget(self.upper_bpm_widget)
+
+        self.layout.addLayout(self.control_layout)        
+
         self.central.setLayout(self.layout)
 
     def set_bpm(self, bpm):
+        if self.lock_checkbox.isChecked():
+            return
+
+        if self.limit_checkbox.isChecked():
+            while bpm < self.lower_bpm_limit:
+                bpm = bpm * 2.0
+            while bpm > self.upper_bpm_limit:
+                bpm = bpm / 2.0
         self.video_widget.set_bpm(bpm)
+        self.set_bpm_widget.setText("{:.1f}".format(self.video_widget.old_bpm))
+
+    def update_bpm_manually(self):
+        bpm = self.set_bpm_widget.text()
+        try:
+            bpm = float(bpm)
+            if bpm < 1.0:
+                raise ValueError
+        except ValueError:
+            return
+        self.video_widget.set_bpm(bpm)
+        self.set_bpm_widget.setText("{:.1f}".format(self.video_widget.old_bpm))
+
+    def update_lock_checkbox(self):
+        if self.lock_checkbox.isChecked():
+            self.set_bpm_palette = QPalette()
+            self.set_bpm_palette.setColor(QPalette.Text, Qt.black)
+            self.set_bpm_widget.setPalette(self.set_bpm_palette)
+            self.set_bpm_widget.setReadOnly(False)
+        else:
+            self.set_bpm_palette = QPalette()
+            self.set_bpm_palette.setColor(QPalette.Text, Qt.gray)
+            self.set_bpm_widget.setPalette(self.set_bpm_palette)
+            self.set_bpm_widget.setReadOnly(True)
+
+    def update_lower_limit(self):
+        value = self.lower_bpm_widget.text()
+        try:
+            value = float(value)
+            if value < 1.0:
+                raise ValueError
+        except ValueError:
+            return
+        if value <= self.upper_bpm_limit / 2.0:
+            self.lower_bpm_limit = value
+        else:
+            self.lower_bpm_limit = self.upper_bpm_limit / 2.0
+        self.lower_bpm_widget.setText("{:.1f}".format(self.lower_bpm_limit))
+
+    def update_upper_limit(self):
+        value = self.upper_bpm_widget.text()
+        try:
+            value = float(value)
+            if value < 1.0:
+                raise ValueError
+        except ValueError:
+            return
+        if value >= self.lower_bpm_limit * 2.0:
+            self.upper_bpm_limit = value
+        else:
+            self.upper_bpm_limit = self.lower_bpm_limit * 2.0
+        self.upper_bpm_widget.setText("{:.1f}".format(self.upper_bpm_limit))
 
     @Slot()
     def show_fullscreen(self):
