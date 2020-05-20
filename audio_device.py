@@ -8,6 +8,7 @@ from audio_data_handler import AudioDataHandler
 class AudioDevice(QObject):
     """Class for storing computer's audio system information."""
     data_ready = Signal(np.ndarray)
+    audio_inputs = Signal(object)
     def __init__(self, default_device_name):
         super().__init__()
         self.default_device_name = default_device_name
@@ -27,7 +28,7 @@ class AudioDevice(QObject):
             dev_name = item.deviceName()
             if dev_name.endswith(".monitor"):
                 self.monitors.append(item)
-            if item.deviceName() == self.default_device_name:
+            if self.default_device_name and self.default_device_name == item.deviceName():
                 self._device = item
         if not self._device:
             try:
@@ -66,12 +67,33 @@ class AudioDevice(QObject):
         self._input = self._audio_input.start()
         self._pull_timer.start()
 
-    stateMap = {
-        QAudio.ActiveState: "ActiveState",
-        QAudio.SuspendedState: "SuspendedState",
-        QAudio.StoppedState: "StoppedState",
-        QAudio.IdleState: "IdleState"
-    }
+    def get_input_devices(self):
+        devices = []
+        if self._device:
+            devices.append(self._device)
+        for item in self.monitors:
+            if item.deviceName() not in [x.deviceName() for x in devices]:
+                devices.append(item)
+        system_default = QAudioDeviceInfo.defaultInputDevice()
+        if system_default not in [x.deviceName() for x in devices]:
+            devices.append(system_default)
+        return devices
+
+    def get_input_device_names(self):
+        devices = self.get_input_devices()
+        names = [x.deviceName() for x in devices]
+        return names
+
+    @Slot(str)
+    def change_audio_input(self, input_name):
+        input_devices = self.monitors
+        input_devices.append(QAudioDeviceInfo.defaultInputDevice())
+        for i in range (len(input_devices)):
+            if input_devices[i].deviceName() == input_name:
+                self._device = input_devices[i]
+                self.initialize_audio()
+                self.start_audio()
+                break
 
     @Slot()
     def write_to_buffer(self):

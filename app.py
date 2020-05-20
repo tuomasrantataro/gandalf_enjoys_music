@@ -32,14 +32,17 @@ class App(QApplication):
 
         self.setApplicationName("Gandalf Enjoys Music")
 
+        self.audio = AudioDevice(self.default_device_name)
+        input_devices = self.audio.get_input_device_names()
+
         self.window = MainWindow(self.show_video_preview,
                                  self.video_loop_bpm,
-                                 self.video_update_skip_ms)
+                                 self.video_update_skip_ms,
+                                 input_devices)
         self.window.show()
+        self.window.audio_changed.connect(self.audio.change_audio_input)
 
         self.bpm_set_fun = self.window.set_bpm
-
-        self.audio = AudioDevice(self.default_device_name)
 
         if self.use_qt_thread:
             self.bpm_extractor = BPMQt(self.bpm_set_fun,

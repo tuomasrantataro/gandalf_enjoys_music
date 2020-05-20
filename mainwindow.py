@@ -1,9 +1,13 @@
+import os
+
 from PySide2.QtCore import Qt, QUrl, Signal, Slot
 from PySide2.QtGui import QPalette
 from PySide2.QtMultimedia import QMediaPlayer, QMediaPlaylist
 from PySide2.QtMultimediaWidgets import QVideoWidget
-from PySide2.QtWidgets import (QCheckBox, QHBoxLayout, QLineEdit, QMainWindow,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide2.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
+                               QLineEdit, QMainWindow, QPushButton,
+                               QVBoxLayout, QWidget)
+
 
 class GandalfVideo(QVideoWidget):
     """Widget for showing looping video and setting its playback speed"""
@@ -29,7 +33,13 @@ class GandalfVideo(QVideoWidget):
         self.setPalette(pal)
 
         self.playlist = QMediaPlaylist(self.media_player)
-        file_location = "/home/tuomas/projektit/gandalf_enjoys_music/resources/gandalf4.mp4"
+        #print("dir path:", dir_path)
+        #path_end = "/resources/video_long.mp4"
+        #print("whole path:", dir_path + path_end)
+        #file_location = "/home/tuomas/projektit/gandalf_enjoys_music/resources/video_long.mp4"
+        #print("old path:", file_location)
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        file_location = dir_path + "/resources/video_long.mp4"
         self.video_file = QUrl.fromLocalFile(file_location)
         self.playlist.addMedia(self.video_file)
         self.playlist.setPlaybackMode(QMediaPlaylist.Loop)
@@ -72,8 +82,9 @@ class GandalfVideo(QVideoWidget):
 
 class MainWindow(QMainWindow):
     """Display nodding Gandalf loop and controls"""
-    #show_preview = True
-    def __init__(self, show_preview, loop_bpm, update_skip_ms, parent=None):
+    audio_changed = Signal(str)
+    def __init__(self, show_preview, loop_bpm, update_skip_ms, input_devices,
+                 parent=None):
         super().__init__(parent)
         self.show_preview = show_preview
 
@@ -130,7 +141,18 @@ class MainWindow(QMainWindow):
         self.upper_bpm_widget.setFixedWidth(50)
         self.control_layout.addWidget(self.upper_bpm_widget)
 
-        self.layout.addLayout(self.control_layout)        
+        self.layout.addLayout(self.control_layout)  
+
+        self.device_layout = QHBoxLayout()
+        self.audio_select_label = QLabel("Audio device:", self)
+        self.device_layout.addWidget(self.audio_select_label)
+
+        self.audio_selection = QComboBox(self)
+        self.audio_selection.addItems(input_devices)
+        self.audio_selection.currentIndexChanged.connect(self.audio_selection_changed)
+        self.device_layout.addWidget(self.audio_selection)
+
+        self.layout.addLayout(self.device_layout)
 
         self.central.setLayout(self.layout)
 
@@ -196,6 +218,10 @@ class MainWindow(QMainWindow):
         else:
             self.upper_bpm_limit = self.lower_bpm_limit * 2.0
         self.upper_bpm_widget.setText("{:.1f}".format(self.upper_bpm_limit))
+
+    def audio_selection_changed(self, idx):
+        self.audio_changed.emit(self.audio_selection.currentText())
+        
 
     @Slot()
     def show_fullscreen(self):
