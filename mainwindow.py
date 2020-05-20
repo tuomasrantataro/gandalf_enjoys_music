@@ -2,7 +2,7 @@ import os
 import json
 
 from PySide2.QtCore import Qt, QUrl, Signal, Slot
-from PySide2.QtGui import QPalette
+from PySide2.QtGui import QPalette, QIcon, QPixmap
 from PySide2.QtMultimedia import QMediaPlayer, QMediaPlaylist
 from PySide2.QtMultimediaWidgets import QVideoWidget
 from PySide2.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
@@ -78,6 +78,13 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        file_location = dir_path + "/resources/gandalf_icon_256px.png"
+        self.icon_pixmap = QPixmap(file_location)
+        self.icon = QIcon(self.icon_pixmap)
+        self.setWindowIcon(self.icon)
+        self.setWindowIconText("Gandalf Enjoys Music")
+
         self.central = QWidget(self)
         self.setCentralWidget(self.central)
         self.layout = QVBoxLayout()
