@@ -12,10 +12,15 @@ Date: 13.5.2020
 
 import sys
 
-from app import App
+from PySide2.QtWidgets import QApplication
+
+from mainwindow import MainWindow
 
 def main():
-    app = App()
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
+    window.show()
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import os
+import json
 
 from PySide2.QtCore import Qt, QUrl, Signal, Slot
 from PySide2.QtGui import QPalette
@@ -8,47 +9,20 @@ from PySide2.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QPushButton,
                                QVBoxLayout, QWidget)
 
+from audio_device import AudioDevice
+from bpm_helper import BPMQt, BPMmp
 
-class GandalfVideo(QVideoWidget):
-    """Widget for showing looping video and setting its playback speed"""
+
+class VideoWidget(QVideoWidget):
     fullscreen_changed = Signal(bool)
-    def __init__(self, parent, show_preview, loop_bpm, update_skip_ms):
+    def __init__(self, parent, show_preview):
         super().__init__(parent)
         self.show_preview = show_preview
-        self.update_skip_ms = update_skip_ms
 
-        self.gandalf_default_bpm = loop_bpm #74.2
-        self.old_bpm = self.gandalf_default_bpm
-
-        self.init_video()
-        self.set_bpm(self.gandalf_default_bpm)
-
-    def init_video(self):
-        self.media_player = QMediaPlayer(self)
-        self.media_player.setVideoOutput(self)
-
-        pal = self.palette()
-        pal.setColor(QPalette.Background, Qt.black)
+        self.pal = self.palette()
+        self.pal.setColor(QPalette.Background, Qt.black)
         self.setAutoFillBackground(True)
-        self.setPalette(pal)
-
-        self.playlist = QMediaPlaylist(self.media_player)
-        #print("dir path:", dir_path)
-        #path_end = "/resources/video_long.mp4"
-        #print("whole path:", dir_path + path_end)
-        #file_location = "/home/tuomas/projektit/gandalf_enjoys_music/resources/video_long.mp4"
-        #print("old path:", file_location)
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        file_location = dir_path + "/resources/video_long.mp4"
-        self.video_file = QUrl.fromLocalFile(file_location)
-        self.playlist.addMedia(self.video_file)
-        self.playlist.setPlaybackMode(QMediaPlaylist.Loop)
-        self.playlist.setCurrentIndex(0)
-        self.media_player.setPlaylist(self.playlist)
-        self.media_player.play()
-
-        if not self.show_preview:
-            self.hide()
+        self.setPalette(self.pal)
 
     def mouseDoubleClickEvent(self, event):
         if self.isFullScreen():
@@ -67,40 +41,53 @@ class GandalfVideo(QVideoWidget):
                 self.setFullScreen(False)
             else:
                 self.hide()
-
-    @Slot(float)
-    def set_bpm(self, bpm):
-        """Update playback speed for Gandalf video loop."""
-        bpm = int(bpm+0.5)
-        if bpm != self.old_bpm:
-            self.old_bpm = bpm
-            gandalf_speed = bpm / self.gandalf_default_bpm
-            current_position = self.media_player.position()
-            self.media_player.setPlaybackRate(gandalf_speed)
-            self.media_player.setPosition(current_position+self.update_skip_ms)
-            self.media_player.play()
+            self.fullscreen_changed.emit(False)
 
 class MainWindow(QMainWindow):
-    """Display nodding Gandalf loop and controls"""
+    """Display video loop and controls"""
     audio_changed = Signal(str)
-    def __init__(self, show_preview, loop_bpm, update_skip_ms, input_devices,
-                 parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.show_preview = show_preview
 
+        # Default values. Updated if found in config.JSON
+        self.use_qt_thread = False
+        self.rhythm_algorithm = "multifeature"
+        self.default_device_name = ""
+        self.show_video_preview = True
+        self.video_loop_bpm = 60
+        self.video_update_skip_ms = 100
+
+        self.read_config()
+
+        self.setWindowTitle("Gandalf Enjoys Music")
+
+        self.audio = AudioDevice(self.default_device_name)
+        self.input_devices = self.audio.get_input_device_names()
+
+        self.audio_changed.connect(self.audio.change_audio_input)
+
+        if self.use_qt_thread:
+            self.bpm_extractor = BPMQt(self.update_bpm,
+                                       algorithm=self.rhythm_algorithm)
+        else:
+            self.bpm_extractor = BPMmp(self.update_bpm,
+                                       algorithm=self.rhythm_algorithm)
+
+        self.audio.data_ready.connect(self.bpm_extractor.start_bpm_calculation)
+
+        self.init_ui()
+
+    def init_ui(self):
         self.central = QWidget(self)
         self.setCentralWidget(self.central)
         self.layout = QVBoxLayout()
 
-        self.video_widget = GandalfVideo(self,
-                                         self.show_preview,
-                                         loop_bpm,
-                                         update_skip_ms)
+        self.init_video()
 
-        if self.show_preview:
+        if self.show_video_preview:
             self.layout.addWidget(self.video_widget)
         else:
-            self.fullscreen_button = QPushButton()
+            self.fullscreen_button = QPushButton(self)
             self.fullscreen_button.setText("Go Fullscreen")
             self.layout.addWidget(self.fullscreen_button)
             self.fullscreen_button.clicked.connect(self.show_fullscreen)
@@ -113,7 +100,7 @@ class MainWindow(QMainWindow):
         self.lock_checkbox.clicked.connect(self.update_lock_checkbox)
         self.control_layout.addWidget(self.lock_checkbox)
 
-        self.set_bpm_widget = QLineEdit("{:.1f}".format(self.video_widget.old_bpm), self)
+        self.set_bpm_widget = QLineEdit("{:.1f}".format(self.old_bpm), self)
         self.set_bpm_widget.setMaxLength(5)
         self.set_bpm_widget.returnPressed.connect(self.update_bpm_manually)
         self.set_bpm_palette = QPalette()
@@ -121,8 +108,6 @@ class MainWindow(QMainWindow):
         self.set_bpm_widget.setPalette(self.set_bpm_palette)
         self.set_bpm_widget.setFixedWidth(50)
         self.control_layout.addWidget(self.set_bpm_widget)
-
-        self.control_layout.addSpacing(50)
 
         self.limit_checkbox = QCheckBox("Limit tempo between:", self)
         self.control_layout.addWidget(self.limit_checkbox)
@@ -148,7 +133,7 @@ class MainWindow(QMainWindow):
         self.device_layout.addWidget(self.audio_select_label)
 
         self.audio_selection = QComboBox(self)
-        self.audio_selection.addItems(input_devices)
+        self.audio_selection.addItems(self.input_devices)
         self.audio_selection.currentIndexChanged.connect(self.audio_selection_changed)
         self.device_layout.addWidget(self.audio_selection)
 
@@ -156,17 +141,61 @@ class MainWindow(QMainWindow):
 
         self.central.setLayout(self.layout)
 
-    def set_bpm(self, bpm):
-        if self.lock_checkbox.isChecked():
-            return
+    def init_video(self):
+        self.old_bpm = 1.0
 
+        self.video_widget = VideoWidget(self, self.show_video_preview)
+        self.media_player = QMediaPlayer(self.central)
+        self.media_player.setVideoOutput(self.video_widget)
+
+        self.playlist = QMediaPlaylist(self.media_player)
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        file_location = dir_path + "/resources/video_long.mp4"
+        self.video_file = QUrl.fromLocalFile(file_location)
+        self.playlist.addMedia(self.video_file)
+        self.playlist.setPlaybackMode(QMediaPlaylist.Loop)
+        self.playlist.setCurrentIndex(0)
+        self.media_player.setPlaylist(self.playlist)
+        self.media_player.mediaStatusChanged.connect(self.handle_media_state_changed)
+
+        self.media_player.play()
+
+        self.change_playback_rate(self.video_loop_bpm)
+
+        if not self.show_video_preview:
+            self.video_widget.hide()
+
+    def handle_media_state_changed(self, state):
+        if state == QMediaPlayer.MediaStatus.BufferedMedia:
+            playback_speed = self.old_bpm / self.video_loop_bpm
+            self.media_player.setPlaybackRate(playback_speed)
+            self.media_player.setPosition(0)
+
+    def change_playback_rate(self, bpm):
+        """Update playback speed for video loop."""
+        if bpm != self.old_bpm:
+            self.old_bpm = bpm
+            playback_speed = bpm / self.video_loop_bpm
+
+            # Workaround for a bug which causes irregular video playback speed
+            # after changing playback rate
+            current_position = self.media_player.position()
+            self.media_player.setPlaybackRate(playback_speed)
+            self.media_player.setPosition(current_position
+                                          + self.video_update_skip_ms)
+
+    def update_bpm(self, bpm, manual=False):
+        if not manual:
+            if self.lock_checkbox.isChecked():
+                return
+            bpm = float(int(bpm+0.5))
         if self.limit_checkbox.isChecked():
             while bpm < self.lower_bpm_limit:
                 bpm = bpm * 2.0
             while bpm > self.upper_bpm_limit:
                 bpm = bpm / 2.0
-        self.video_widget.set_bpm(bpm)
-        self.set_bpm_widget.setText("{:.1f}".format(self.video_widget.old_bpm))
+        self.change_playback_rate(bpm)
+        self.set_bpm_widget.setText("{:.1f}".format(self.old_bpm))
 
     def update_bpm_manually(self):
         bpm = self.set_bpm_widget.text()
@@ -176,8 +205,7 @@ class MainWindow(QMainWindow):
                 raise ValueError
         except ValueError:
             return
-        self.video_widget.set_bpm(bpm)
-        self.set_bpm_widget.setText("{:.1f}".format(self.video_widget.old_bpm))
+        self.update_bpm(bpm, manual=True)
 
     def update_lock_checkbox(self):
         if self.lock_checkbox.isChecked():
@@ -221,7 +249,6 @@ class MainWindow(QMainWindow):
 
     def audio_selection_changed(self, idx):
         self.audio_changed.emit(self.audio_selection.currentText())
-        
 
     @Slot()
     def show_fullscreen(self):
@@ -238,3 +265,20 @@ class MainWindow(QMainWindow):
             self.fullscreen_button.setText("Hide Fullscreen")
         else:
             self.fullscreen_button.setText("Go Fullscreen")
+
+    def read_config(self):
+        with open("config.JSON") as config_file:
+            config = json.load(config_file)
+
+            if "no_multiprocess" in config:
+                self.use_qt_thread = config["no_multiprocess"]
+            if config.get("rhythm_algorithm_faster"):
+                self.rhythm_algorithm = "degara"
+            if config.get("default_device"):
+                self.default_device_name = config["default_device"]
+            if "show_video_preview" in config:
+                self.show_video_preview = config.get("show_video_preview")
+            if config.get("video_loop_bpm"):
+                self.video_loop_bpm = config["video_loop_bpm"]
+            if config.get("video_update_skip_time_ms"):
+                self.video_update_skip_ms = config["video_update_skip_time_ms"]
