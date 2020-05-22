@@ -1,7 +1,7 @@
 import os
 import json
 
-from PySide2.QtCore import Qt, QUrl, Signal, Slot
+from PySide2.QtCore import Qt, QUrl, Signal, Slot, QSize
 from PySide2.QtGui import QPalette, QIcon, QPixmap
 from PySide2.QtMultimedia import QMediaPlayer, QMediaPlaylist
 from PySide2.QtMultimediaWidgets import QVideoWidget
@@ -56,6 +56,9 @@ class MainWindow(QMainWindow):
         self.show_video_preview = True
         self.video_loop_bpm = 60
         self.video_update_skip_ms = 100
+        self.limit_tempo_by_default = False
+        self.tempo_lower_limit = 60.0
+        self.tempo_upper_limit = 120.0
 
         self.read_config()
 
@@ -92,8 +95,10 @@ class MainWindow(QMainWindow):
         self.init_video()
 
         if self.show_video_preview:
+            self.setFixedSize(QSize(500, 300))
             self.layout.addWidget(self.video_widget)
         else:
+            self.setFixedSize(500, 100)
             self.fullscreen_button = QPushButton(self)
             self.fullscreen_button.setText("Go Fullscreen")
             self.layout.addWidget(self.fullscreen_button)
@@ -117,17 +122,16 @@ class MainWindow(QMainWindow):
         self.control_layout.addWidget(self.set_bpm_widget)
 
         self.limit_checkbox = QCheckBox("Limit tempo between:", self)
+        self.limit_checkbox.setChecked(self.limit_tempo_by_default)
         self.control_layout.addWidget(self.limit_checkbox)
 
-        self.lower_bpm_limit = 60.0
-        self.lower_bpm_widget = QLineEdit(str(self.lower_bpm_limit), self)
+        self.lower_bpm_widget = QLineEdit(str(self.tempo_lower_limit), self)
         self.lower_bpm_widget.setMaxLength(5)
         self.lower_bpm_widget.returnPressed.connect(self.update_lower_limit)
         self.lower_bpm_widget.setFixedWidth(50)
         self.control_layout.addWidget(self.lower_bpm_widget)
 
-        self.upper_bpm_limit = 120.0
-        self.upper_bpm_widget = QLineEdit(str(self.upper_bpm_limit), self)
+        self.upper_bpm_widget = QLineEdit(str(self.tempo_upper_limit), self)
         self.upper_bpm_widget.setMaxLength(5)
         self.upper_bpm_widget.returnPressed.connect(self.update_upper_limit)
         self.upper_bpm_widget.setFixedWidth(50)
@@ -189,7 +193,8 @@ class MainWindow(QMainWindow):
             current_position = self.media_player.position()
             self.media_player.setPlaybackRate(playback_speed)
             self.media_player.setPosition(current_position
-                                          + self.video_update_skip_ms)
+                                          + self.video_update_skip_ms
+                                          * playback_speed)
 
     def update_bpm(self, bpm, manual=False):
         if not manual:
@@ -197,9 +202,9 @@ class MainWindow(QMainWindow):
                 return
             bpm = float(int(bpm+0.5))
         if self.limit_checkbox.isChecked():
-            while bpm < self.lower_bpm_limit:
+            while bpm < self.tempo_lower_limit:
                 bpm = bpm * 2.0
-            while bpm > self.upper_bpm_limit:
+            while bpm > self.tempo_upper_limit:
                 bpm = bpm / 2.0
         self.change_playback_rate(bpm)
         self.set_bpm_widget.setText("{:.1f}".format(self.old_bpm))
@@ -226,33 +231,35 @@ class MainWindow(QMainWindow):
             self.set_bpm_widget.setPalette(self.set_bpm_palette)
             self.set_bpm_widget.setReadOnly(True)
 
-    def update_lower_limit(self):
-        value = self.lower_bpm_widget.text()
+    def update_lower_limit(self, value=None):
+        if not value:
+            value = self.lower_bpm_widget.text()
         try:
             value = float(value)
             if value < 1.0:
                 raise ValueError
         except ValueError:
             return
-        if value <= self.upper_bpm_limit / 2.0:
-            self.lower_bpm_limit = value
+        if value <= self.tempo_upper_limit / 2.0:
+            self.tempo_lower_limit = value
         else:
-            self.lower_bpm_limit = self.upper_bpm_limit / 2.0
-        self.lower_bpm_widget.setText("{:.1f}".format(self.lower_bpm_limit))
+            self.tempo_lower_limit = self.tempo_upper_limit / 2.0
+        self.lower_bpm_widget.setText("{:.1f}".format(self.tempo_lower_limit))
 
-    def update_upper_limit(self):
-        value = self.upper_bpm_widget.text()
+    def update_upper_limit(self, value=None):
+        if not value:
+            value = self.upper_bpm_widget.text()
         try:
             value = float(value)
             if value < 1.0:
                 raise ValueError
         except ValueError:
             return
-        if value >= self.lower_bpm_limit * 2.0:
-            self.upper_bpm_limit = value
+        if value >= self.tempo_lower_limit * 2.0:
+            self.tempo_upper_limit = value
         else:
-            self.upper_bpm_limit = self.lower_bpm_limit * 2.0
-        self.upper_bpm_widget.setText("{:.1f}".format(self.upper_bpm_limit))
+            self.tempo_upper_limit = self.tempo_lower_limit * 2.0
+        self.upper_bpm_widget.setText("{:.1f}".format(self.tempo_upper_limit))
 
     def audio_selection_changed(self, idx):
         self.audio_changed.emit(self.audio_selection.currentText())
@@ -289,3 +296,9 @@ class MainWindow(QMainWindow):
                 self.video_loop_bpm = config["video_loop_bpm"]
             if config.get("video_update_skip_time_ms"):
                 self.video_update_skip_ms = config["video_update_skip_time_ms"]
+            if config.get("limit_tempo_by_default"):
+                self.limit_tempo_by_default = config["limit_tempo_by_default"]
+            if config.get("tempo_lower_limit"):
+                self.tempo_lower_limit = config["tempo_lower_limit"]
+            if config.get("tempo_upper_limit"):
+                self.tempo_upper_limit = config["tempo_upper_limit"]
