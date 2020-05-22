@@ -6,6 +6,7 @@
     "video_loop_bpm": 75,
     "video_update_skip_time_ms": 80,
     "limit_tempo_by_default": true,
-    "tempo_lower_limit": 50.0,
-    "tempo_upper_limit": 100.0
+    "tempo_lower_limit": 60.0,
+    "tempo_upper_limit": 120.0,
+    "screen": 0
 }

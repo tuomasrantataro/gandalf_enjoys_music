@@ -5,7 +5,7 @@ from PySide2.QtCore import Qt, QUrl, Signal, Slot, QSize
 from PySide2.QtGui import QPalette, QIcon, QPixmap
 from PySide2.QtMultimedia import QMediaPlayer, QMediaPlaylist
 from PySide2.QtMultimediaWidgets import QVideoWidget
-from PySide2.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
+from PySide2.QtWidgets import (QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel,
                                QLineEdit, QMainWindow, QPushButton,
                                QVBoxLayout, QWidget)
 
@@ -15,14 +15,17 @@ from bpm_helper import BPMQt, BPMmp
 
 class VideoWidget(QVideoWidget):
     fullscreen_changed = Signal(bool)
-    def __init__(self, parent, show_preview):
+    def __init__(self, parent, show_preview, screen):
         super().__init__(parent)
         self.show_preview = show_preview
+        self.screen = screen
 
         self.pal = self.palette()
         self.pal.setColor(QPalette.Background, Qt.black)
         self.setAutoFillBackground(True)
         self.setPalette(self.pal)
+
+        self.desktop = QApplication.desktop()
 
     def mouseDoubleClickEvent(self, event):
         if self.isFullScreen():
@@ -33,6 +36,7 @@ class VideoWidget(QVideoWidget):
             self.fullscreen_changed.emit(False)
         else:
             self.setFullScreen(True)
+            self.setGeometry(self.desktop.screenGeometry(self.screen))
             self.fullscreen_changed.emit(True)
 
     def keyPressEvent(self, event):
@@ -59,10 +63,12 @@ class MainWindow(QMainWindow):
         self.limit_tempo_by_default = False
         self.tempo_lower_limit = 60.0
         self.tempo_upper_limit = 120.0
+        self.screen = 0
 
         self.read_config()
 
         self.setWindowTitle("Gandalf Enjoys Music")
+        self.desktop = QApplication.desktop()
 
         self.audio = AudioDevice(self.default_device_name)
         self.input_devices = self.audio.get_input_device_names()
@@ -106,6 +112,10 @@ class MainWindow(QMainWindow):
             self.video_widget.fullscreen_changed.connect(
                 self.update_button_text)
 
+        self.video_widget.fullscreen_changed.connect(
+            self.reset_video_position
+        )
+
         self.control_layout = QHBoxLayout()
 
         self.lock_checkbox = QCheckBox("Manual tempo", self)
@@ -137,7 +147,7 @@ class MainWindow(QMainWindow):
         self.upper_bpm_widget.setFixedWidth(50)
         self.control_layout.addWidget(self.upper_bpm_widget)
 
-        self.layout.addLayout(self.control_layout)  
+        self.layout.addLayout(self.control_layout)
 
         self.device_layout = QHBoxLayout()
         self.audio_select_label = QLabel("Audio device:", self)
@@ -155,7 +165,9 @@ class MainWindow(QMainWindow):
     def init_video(self):
         self.old_bpm = 1.0
 
-        self.video_widget = VideoWidget(self, self.show_video_preview)
+        self.video_widget = VideoWidget(self,
+                                        self.show_video_preview,
+                                        self.screen)
         self.media_player = QMediaPlayer(self.central)
         self.media_player.setVideoOutput(self.video_widget)
 
@@ -266,12 +278,18 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def show_fullscreen(self):
+        self.reset_video_position()
         if self.video_widget.isFullScreen():
             self.video_widget.hide()
             self.fullscreen_button.setText("Go Fullscreen")
         else:
             self.video_widget.setFullScreen(True)
+            self.video_widget.setGeometry(self.desktop.screenGeometry(self.screen))
             self.fullscreen_button.setText("Hide Fullscreen")
+
+    @Slot()
+    def reset_video_position(self):
+        self.media_player.setPosition(0)
 
     @Slot(bool)
     def update_button_text(self, fullscreen_status):
@@ -302,3 +320,5 @@ class MainWindow(QMainWindow):
                 self.tempo_lower_limit = config["tempo_lower_limit"]
             if config.get("tempo_upper_limit"):
                 self.tempo_upper_limit = config["tempo_upper_limit"]
+            if "screen" in config:
+                self.screen = config["screen"]
