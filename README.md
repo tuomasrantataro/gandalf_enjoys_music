@@ -15,9 +15,13 @@ This program analyzes audio output to find tempo of the music which is currently
 Python packages:
 - PySide2
 - Essentia
+- pydbus
+- vext
+- vext.gi
 
-For generating longer video file:
-- Ffmpeg
+Linux packages:
+- python3-gi
+- ffmpeg
 
 ## Creating video from one loop
 Qt's Media player does not allow seamless switching between videos, meaning that when a video ends and the next one starts, there will be a small gap in playback. This is mitigated by creating a long video of the loop repeating.

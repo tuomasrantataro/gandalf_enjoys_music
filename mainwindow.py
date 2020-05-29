@@ -1,5 +1,9 @@
 import os
 import json
+import math
+
+import pydbus
+import gi.repository
 
 from PySide2.QtCore import Qt, QUrl, Signal, Slot, QSize
 from PySide2.QtGui import QPalette, QIcon, QPixmap
@@ -65,6 +69,8 @@ class MainWindow(QMainWindow):
         self.tempo_upper_limit = 120.0
         self.screen = 0
 
+        self.spotify_track_id = ""
+
         self.read_config()
 
         self.setWindowTitle("Gandalf Enjoys Music")
@@ -98,10 +104,18 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central)
         self.layout = QVBoxLayout()
 
+        self.lock_checkbox = QCheckBox("Manual tempo", self)
+        self.lock_checkbox.clicked.connect(self.update_lock_checkbox)
+
+        self.limit_layout = QVBoxLayout()
+        self.limit_checkbox = QCheckBox("Limit tempo between:", self)
+        self.limit_checkbox.setChecked(self.limit_tempo_by_default)
+        self.limit_checkbox.clicked.connect(self.update_bpm_manually)
+
         self.init_video()
 
         if self.show_video_preview:
-            self.setFixedSize(QSize(500, 300))
+            self.setFixedSize(QSize(500, 350))
             self.layout.addWidget(self.video_widget)
         else:
             self.setFixedSize(500, 100)
@@ -116,11 +130,8 @@ class MainWindow(QMainWindow):
             self.reset_video_position
         )
 
-        self.control_layout = QHBoxLayout()
-
-        self.lock_checkbox = QCheckBox("Manual tempo", self)
-        self.lock_checkbox.clicked.connect(self.update_lock_checkbox)
-        self.control_layout.addWidget(self.lock_checkbox)
+        self.tempo_control_layout = QVBoxLayout()
+        self.tempo_control_layout.addWidget(self.lock_checkbox)
 
         self.set_bpm_widget = QLineEdit("{:.1f}".format(self.old_bpm), self)
         self.set_bpm_widget.setMaxLength(5)
@@ -129,23 +140,32 @@ class MainWindow(QMainWindow):
         self.set_bpm_palette.setColor(QPalette.Text, Qt.gray)
         self.set_bpm_widget.setPalette(self.set_bpm_palette)
         self.set_bpm_widget.setFixedWidth(50)
-        self.control_layout.addWidget(self.set_bpm_widget)
+        self.tempo_control_layout.addWidget(self.set_bpm_widget)
 
-        self.limit_checkbox = QCheckBox("Limit tempo between:", self)
-        self.limit_checkbox.setChecked(self.limit_tempo_by_default)
-        self.control_layout.addWidget(self.limit_checkbox)
+        self.limit_layout.addWidget(self.limit_checkbox)
+
+        self.limits = QHBoxLayout()
 
         self.lower_bpm_widget = QLineEdit(str(self.tempo_lower_limit), self)
         self.lower_bpm_widget.setMaxLength(5)
         self.lower_bpm_widget.returnPressed.connect(self.update_lower_limit)
         self.lower_bpm_widget.setFixedWidth(50)
-        self.control_layout.addWidget(self.lower_bpm_widget)
+        self.limits.addWidget(self.lower_bpm_widget)
 
         self.upper_bpm_widget = QLineEdit(str(self.tempo_upper_limit), self)
         self.upper_bpm_widget.setMaxLength(5)
         self.upper_bpm_widget.returnPressed.connect(self.update_upper_limit)
         self.upper_bpm_widget.setFixedWidth(50)
-        self.control_layout.addWidget(self.upper_bpm_widget)
+        self.limits.addWidget(self.upper_bpm_widget)
+        self.limit_layout.addLayout(self.limits)
+
+        self.control_layout = QHBoxLayout()
+        self.control_layout.addLayout(self.tempo_control_layout)
+        self.control_layout.addLayout(self.limit_layout)
+
+        self.save_settings_button = QPushButton("Save settings", self)
+        self.save_settings_button.clicked.connect(self.save_config)
+        self.control_layout.addWidget(self.save_settings_button)
 
         self.layout.addLayout(self.control_layout)
 
@@ -197,6 +217,17 @@ class MainWindow(QMainWindow):
     def change_playback_rate(self, bpm):
         """Update playback speed for video loop."""
         if bpm != self.old_bpm:
+            # Prevent switching between double and half tempo during the same song in spotify
+            track_id = get_spotify_track()
+            if not self.lock_checkbox.isChecked()\
+                    and not self.limit_checkbox.isChecked()\
+                    and (math.isclose(bpm*2,self.old_bpm, rel_tol=3e-2)\
+                    or math.isclose(bpm, self.old_bpm*2, rel_tol=3e-2))\
+                    and track_id and track_id == self.spotify_track_id:
+                self.spotify_track_id = track_id
+                return
+            self.spotify_track_id = track_id
+            
             self.old_bpm = bpm
             playback_speed = bpm / self.video_loop_bpm
 
@@ -229,6 +260,7 @@ class MainWindow(QMainWindow):
                 raise ValueError
         except ValueError:
             return
+        self.spotify_track_id = ""
         self.update_bpm(bpm, manual=True)
 
     def update_lock_checkbox(self):
@@ -322,3 +354,44 @@ class MainWindow(QMainWindow):
                 self.tempo_upper_limit = config["tempo_upper_limit"]
             if "screen" in config:
                 self.screen = config["screen"]
+
+    @Slot()
+    def save_config(self):
+        fast_rhythm_algo = self.rhythm_algorithm == "degara"
+        data = {
+            "no_multiprocess": self.use_qt_thread,
+            "rhythm_algorithm_faster": fast_rhythm_algo,
+            "default_device": self.audio_selection.currentText(),
+            "show_video_preview": self.show_video_preview,
+            "video_loop_bpm": self.video_loop_bpm,
+            "video_update_skip_time_ms": self.video_update_skip_ms,
+            "limit_tempo_by_default": self.limit_checkbox.isChecked(),
+            "tempo_lower_limit": self.tempo_lower_limit,
+            "tempo_upper_limit": self.tempo_upper_limit,
+            "screen": self.screen
+        }
+        with open("config.JSON", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+def get_spotify_track():
+    session_bus = pydbus.SessionBus()
+    try:
+        spotify_base = "/org/mpris/MediaPlayer2"
+        spotify = session_bus.get("org.mpris.MediaPlayer2.spotify", spotify_base)
+        return spotify["org.mpris.MediaPlayer2.Player"].Metadata["mpris:trackid"]
+    except gi.repository.GLib.Error as err:
+        spotify_not_running = (
+            "g-dbus-error-quark: "
+            "GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: "
+            "The name org.mpris.MediaPlayer2.spotify "
+            "was not provided by any .service files (2)")
+        spotify_has_quit = (
+            "g-dbus-error-quark: "
+            "GDBus.Error:org.freedesktop.DBus.Error.NoReply: "
+            "Message recipient disconnected from message bus without replying (4)"
+        )
+        if str(err) == spotify_not_running:
+            return ""
+        if str(err) == spotify_has_quit:
+            return ""
+        raise
